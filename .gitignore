@@ -1,0 +1,31 @@
+# Node / frontend
+node_modules/
+frontend/node_modules/
+frontend/.vite/
+dist/
+frontend/dist/
+
+# Python / backend
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# ML / large files
+*.pt
+*.pth
+
+# Images / outputs
+*.jpg
+*.png
+runs/
+
+# Env
+.env
+.env.local
+
+# Logs
+*.log
+
+# OS
+.DS_Store
