@@ -12,16 +12,22 @@ class DetectorState:
             "missed_frames": 0,
             "latest_detections": [],
             "last_updated": None,
+            "source_type": "webcam",
             "source_name": "webcam",
             "system_status": "starting",
             "model_loaded": False,
             "source_connected": False,
             "latest_annotated_frame_bytes": None,
+            "last_source_error": None,
+            "last_successful_fetch_at": None,
+            "last_fetch_http_status": None,
         }
 
-    def set_source_name(self, source_name: str) -> None:
+    def set_source_details(self, source_type: str, source_name: str) -> None:
         with self._lock:
+            self._state["source_type"] = source_type
             self._state["source_name"] = source_name
+            self._state["last_updated"] = self._iso_timestamp()
 
     def set_system_status(self, system_status: str) -> None:
         with self._lock:
@@ -36,6 +42,18 @@ class DetectorState:
     def set_source_connected(self, source_connected: bool) -> None:
         with self._lock:
             self._state["source_connected"] = source_connected
+            self._state["last_updated"] = self._iso_timestamp()
+
+    def update_source_diagnostics(
+        self,
+        last_source_error: Optional[str],
+        last_successful_fetch_at: Optional[str],
+        last_fetch_http_status: Optional[int],
+    ) -> None:
+        with self._lock:
+            self._state["last_source_error"] = last_source_error
+            self._state["last_successful_fetch_at"] = last_successful_fetch_at
+            self._state["last_fetch_http_status"] = last_fetch_http_status
             self._state["last_updated"] = self._iso_timestamp()
 
     def update_detection_state(

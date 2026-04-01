@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Response
 from fastapi.responses import JSONResponse
 
-from app.models import DetectionsResponse, HealthResponse, StatusResponse
+from app.config import settings
+from app.models import DetectionsResponse, HealthResponse, SourceResponse, StatusResponse
 from app.state import detector_state
 
 
@@ -30,6 +31,9 @@ def get_status() -> StatusResponse:
         source_name=str(snapshot["source_name"]),
         last_updated=snapshot["last_updated"],
         system_status=str(snapshot["system_status"]),
+        last_source_error=snapshot["last_source_error"],
+        last_successful_fetch_at=snapshot["last_successful_fetch_at"],
+        last_fetch_http_status=snapshot["last_fetch_http_status"],
     )
 
 
@@ -41,6 +45,31 @@ def get_detections() -> DetectionsResponse:
     return DetectionsResponse(
         detection_count=len(latest_detections),
         latest_detections=latest_detections,
+    )
+
+
+@router.get("/source", response_model=SourceResponse)
+def get_source() -> SourceResponse:
+    snapshot = detector_state.get_snapshot()
+
+    image_url = None
+    if settings.source_type == "arcgis" and settings.get_arcgis_source_url() != "":
+        image_url = settings.get_arcgis_source_url()
+
+    auth_mode = "none"
+    if settings.source_type == "arcgis":
+        auth_mode = settings.arcgis_auth_mode
+
+    return SourceResponse(
+        source_type=str(snapshot["source_type"]),
+        source_name=str(snapshot["source_name"]),
+        source_connected=bool(snapshot["source_connected"]),
+        poll_interval_seconds=settings.get_active_poll_interval_seconds(),
+        image_url=image_url,
+        auth_mode=auth_mode,
+        last_source_error=snapshot["last_source_error"],
+        last_successful_fetch_at=snapshot["last_successful_fetch_at"],
+        last_fetch_http_status=snapshot["last_fetch_http_status"],
     )
 
 

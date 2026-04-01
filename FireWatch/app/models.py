@@ -27,8 +27,23 @@ class StatusResponse(BaseModel):
     source_name: str
     last_updated: Optional[str]
     system_status: str
+    last_source_error: Optional[str]
+    last_successful_fetch_at: Optional[str]
+    last_fetch_http_status: Optional[int]
 
 
 class DetectionsResponse(BaseModel):
     detection_count: int
     latest_detections: List[DetectionRecord]
+
+
+class SourceResponse(BaseModel):
+    source_type: str
+    source_name: str
+    source_connected: bool
+    poll_interval_seconds: float
+    image_url: Optional[str]
+    auth_mode: str
+    last_source_error: Optional[str]
+    last_successful_fetch_at: Optional[str]
+    last_fetch_http_status: Optional[int]

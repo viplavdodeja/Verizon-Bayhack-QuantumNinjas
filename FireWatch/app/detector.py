@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
+import logging
 from threading import Event, Thread
-import time
 from typing import Dict, List, Optional
 
 import cv2
@@ -9,8 +9,12 @@ from ultralytics import YOLO
 from app.config import settings
 from app.services.alert_engine import AlertEngine
 from app.sources.base_source import BaseFrameSource
-from app.sources.webcam_source import WebcamSource
+from app.sources.base_source import FrameReadResult
+from app.sources.source_factory import create_source
 from app.state import detector_state
+
+
+logger = logging.getLogger(__name__)
 
 
 class FireDetectorService:
@@ -43,19 +47,30 @@ class FireDetectorService:
     def _run_loop(self) -> None:
         try:
             detector_state.set_system_status("starting")
-            detector_state.set_source_name(settings.source_name)
+            detector_state.set_source_details(
+                settings.source_type,
+                settings.get_default_source_name(),
+            )
+
+            if settings.source_type == "arcgis":
+                logger.info(settings.get_arcgis_startup_status_message())
+            else:
+                logger.info("Webcam mode is configured correctly.")
 
             self._load_model()
             if self.model is None:
                 detector_state.set_system_status("model_error")
                 return
 
-            self.source = self._build_source()
+            self.source = create_source()
             if self.source is None:
                 detector_state.set_system_status("source_error")
                 return
 
-            detector_state.set_source_name(self.source.source_name)
+            detector_state.set_source_details(
+                self.source.get_source_type(),
+                self.source.get_source_name(),
+            )
 
             source_connected = self.source.connect()
             detector_state.set_source_connected(source_connected)
@@ -67,21 +82,32 @@ class FireDetectorService:
             detector_state.set_system_status("running")
 
             while not self.stop_event.is_set():
-                frame = self.source.read_frame()
-                if frame is None:
+                read_result = self.source.read()
+                detector_state.update_source_diagnostics(
+                    last_source_error=read_result.last_source_error,
+                    last_successful_fetch_at=read_result.last_successful_fetch_at,
+                    last_fetch_http_status=read_result.last_fetch_http_status,
+                )
+                if read_result.is_duplicate:
+                    logger.info(read_result.message)
+                    detector_state.set_source_connected(True)
+                    detector_state.set_system_status("running")
+                    continue
+
+                if not read_result.success or read_result.frame is None:
+                    logger.warning(read_result.message)
                     detector_state.set_source_connected(False)
                     detector_state.set_system_status("source_read_error")
-                    time.sleep(settings.frame_poll_interval_seconds)
                     continue
 
                 detector_state.set_source_connected(True)
                 detector_state.set_system_status("running")
 
-                valid_detections = self._predict(frame)
+                valid_detections = self._predict(read_result)
                 self.alert_engine.update(len(valid_detections))
 
                 annotated_frame_bytes = self._build_annotated_frame(
-                    frame=frame,
+                    frame=read_result.frame,
                     detections=valid_detections,
                     alert_active=self.alert_engine.alert_active,
                     consecutive_detections=self.alert_engine.consecutive_detections,
@@ -94,14 +120,13 @@ class FireDetectorService:
                     latest_detections=valid_detections,
                     annotated_frame_bytes=annotated_frame_bytes,
                 )
-
-                time.sleep(settings.frame_poll_interval_seconds)
         finally:
             if self.source is not None:
                 self.source.release()
                 self.source = None
-            detector_state.set_system_status("stopped")
             detector_state.set_source_connected(False)
+            if self.stop_event.is_set():
+                detector_state.set_system_status("stopped")
 
     def _load_model(self) -> None:
         try:
@@ -111,22 +136,13 @@ class FireDetectorService:
             self.model = None
             detector_state.set_model_loaded(False)
 
-    def _build_source(self) -> Optional[BaseFrameSource]:
-        if settings.source_name == "webcam":
-            return WebcamSource(
-                camera_index=settings.camera_index,
-                frame_width=settings.frame_width,
-                frame_height=settings.frame_height,
-            )
-        return None
-
-    def _predict(self, frame) -> List[Dict[str, object]]:
-        if self.model is None:
+    def _predict(self, read_result: FrameReadResult) -> List[Dict[str, object]]:
+        if self.model is None or read_result.frame is None:
             return []
 
         try:
             results = self.model.predict(
-                source=frame,
+                source=read_result.frame,
                 conf=settings.confidence_threshold,
                 iou=settings.iou_threshold,
                 imgsz=settings.img_size,
@@ -140,8 +156,8 @@ class FireDetectorService:
         boxes = result.boxes
 
         valid_detections: List[Dict[str, object]] = []
-        frame_height = frame.shape[0]
-        frame_width = frame.shape[1]
+        frame_height = read_result.frame.shape[0]
+        frame_width = read_result.frame.shape[1]
         frame_area = frame_width * frame_height
 
         if boxes is None or len(boxes) == 0:
