@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 class ArcGISImageSource(BaseFrameSource):
     def __init__(
         self,
+        source_name: str,
         image_url: str,
         poll_interval_seconds: float,
         request_timeout_seconds: float,
@@ -30,7 +31,7 @@ class ArcGISImageSource(BaseFrameSource):
         auth_header_name: str,
         auth_header_prefix: str,
     ) -> None:
-        super().__init__("arcgis", "arcgis-image")
+        super().__init__("arcgis", source_name)
         self.image_url = image_url
         self.poll_interval_seconds = poll_interval_seconds
         self.request_timeout_seconds = request_timeout_seconds

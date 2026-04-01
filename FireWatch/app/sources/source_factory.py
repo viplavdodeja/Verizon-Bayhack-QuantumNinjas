@@ -7,8 +7,11 @@ from app.sources.webcam_source import WebcamSource
 
 
 def create_source() -> Optional[BaseFrameSource]:
-    if settings.source_type == "arcgis":
+    active_source_type = settings.get_source_type()
+
+    if active_source_type == "arcgis":
         return ArcGISImageSource(
+            source_name=settings.get_active_arcgis_source_name(),
             image_url=settings.get_arcgis_source_url(),
             poll_interval_seconds=settings.arcgis_poll_interval_seconds,
             request_timeout_seconds=settings.arcgis_request_timeout_seconds,
@@ -19,7 +22,7 @@ def create_source() -> Optional[BaseFrameSource]:
             auth_header_prefix=settings.arcgis_auth_header_prefix,
         )
 
-    if settings.source_type == "webcam":
+    if active_source_type == "webcam":
         return WebcamSource(
             camera_index=settings.camera_index,
             frame_width=settings.frame_width,

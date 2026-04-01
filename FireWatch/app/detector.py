@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 import logging
-from threading import Event, Thread
+from threading import Event, RLock, Thread
 from typing import Dict, List, Optional
 
 import cv2
@@ -23,36 +23,71 @@ class FireDetectorService:
         self.worker_thread: Optional[Thread] = None
         self.model: Optional[YOLO] = None
         self.source: Optional[BaseFrameSource] = None
+        self.control_lock = RLock()
         self.alert_engine = AlertEngine(
             min_consecutive_detections=settings.min_consecutive_detections,
             max_missed_frames=settings.max_missed_frames,
+            alert_confidence_threshold=settings.alert_confidence_threshold,
         )
 
     def start(self) -> None:
-        if self.worker_thread is not None and self.worker_thread.is_alive():
-            return
+        with self.control_lock:
+            if self.worker_thread is not None and self.worker_thread.is_alive():
+                return
 
-        self.stop_event.clear()
-        self.worker_thread = Thread(target=self._run_loop, daemon=True)
-        self.worker_thread.start()
+            self.stop_event.clear()
+            self.worker_thread = Thread(target=self._run_loop, daemon=True)
+            self.worker_thread.start()
 
     def stop(self) -> None:
+        with self.control_lock:
+            self._stop_locked()
+
+    def reconfigure_source(
+        self,
+        source_type: str,
+        camera_id: Optional[str],
+        image_url: Optional[str],
+    ) -> str:
+        with self.control_lock:
+            if source_type == "webcam":
+                source_name = settings.switch_to_webcam()
+            elif source_type == "arcgis":
+                source_name = settings.switch_to_arcgis(
+                    camera_id=camera_id,
+                    image_url=image_url,
+                )
+            else:
+                raise ValueError("Unsupported source type.")
+
+            self._stop_locked()
+            detector_state.reset_runtime_state(
+                source_type=settings.get_source_type(),
+                source_name=source_name,
+            )
+            self.alert_engine.reset()
+            self.start()
+            return source_name
+
+    def _stop_locked(self) -> None:
         self.stop_event.set()
         if self.worker_thread is not None:
             self.worker_thread.join(timeout=5)
+            self.worker_thread = None
         if self.source is not None:
             self.source.release()
             self.source = None
 
     def _run_loop(self) -> None:
         try:
+            active_source_type = settings.get_source_type()
             detector_state.set_system_status("starting")
             detector_state.set_source_details(
-                settings.source_type,
+                active_source_type,
                 settings.get_default_source_name(),
             )
 
-            if settings.source_type == "arcgis":
+            if active_source_type == "arcgis":
                 logger.info(settings.get_arcgis_startup_status_message())
             else:
                 logger.info("Webcam mode is configured correctly.")
@@ -88,6 +123,7 @@ class FireDetectorService:
                     last_successful_fetch_at=read_result.last_successful_fetch_at,
                     last_fetch_http_status=read_result.last_fetch_http_status,
                 )
+
                 if read_result.is_duplicate:
                     logger.info(read_result.message)
                     detector_state.set_source_connected(True)
@@ -101,10 +137,18 @@ class FireDetectorService:
                     continue
 
                 detector_state.set_source_connected(True)
+                detector_state.set_source_details(
+                    self.source.get_source_type(),
+                    self.source.get_source_name(),
+                )
                 detector_state.set_system_status("running")
 
                 valid_detections = self._predict(read_result)
-                self.alert_engine.update(len(valid_detections))
+                highest_confidence = self._get_highest_confidence(valid_detections)
+                self.alert_engine.update(
+                    detection_count=len(valid_detections),
+                    highest_confidence=highest_confidence,
+                )
 
                 annotated_frame_bytes = self._build_annotated_frame(
                     frame=read_result.frame,
@@ -129,12 +173,29 @@ class FireDetectorService:
                 detector_state.set_system_status("stopped")
 
     def _load_model(self) -> None:
+        if self.model is not None:
+            detector_state.set_model_loaded(True)
+            detector_state.set_model_diagnostics(
+                model_path=str(settings.model_path),
+                model_error=None,
+            )
+            return
+
         try:
             self.model = YOLO(str(settings.model_path))
             detector_state.set_model_loaded(True)
-        except Exception:
+            detector_state.set_model_diagnostics(
+                model_path=str(settings.model_path),
+                model_error=None,
+            )
+        except Exception as error:
             self.model = None
             detector_state.set_model_loaded(False)
+            detector_state.set_model_diagnostics(
+                model_path=str(settings.model_path),
+                model_error=str(error),
+            )
+            logger.exception("Failed to load YOLO model from %s", settings.model_path)
 
     def _predict(self, read_result: FrameReadResult) -> List[Dict[str, object]]:
         if self.model is None or read_result.frame is None:
@@ -195,6 +256,19 @@ class FireDetectorService:
             valid_detections.append(detection_record)
 
         return valid_detections
+
+    def _get_highest_confidence(
+        self,
+        detections: List[Dict[str, object]],
+    ) -> float:
+        highest_confidence = 0.0
+
+        for detection in detections:
+            confidence = float(detection["confidence"])
+            if confidence > highest_confidence:
+                highest_confidence = confidence
+
+        return highest_confidence
 
     def _build_annotated_frame(
         self,

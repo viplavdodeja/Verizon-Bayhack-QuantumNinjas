@@ -18,6 +18,8 @@ class HealthResponse(BaseModel):
     status: str
     model_loaded: bool
     source_connected: bool
+    model_path: Optional[str]
+    model_error: Optional[str]
 
 
 class StatusResponse(BaseModel):
@@ -30,6 +32,8 @@ class StatusResponse(BaseModel):
     last_source_error: Optional[str]
     last_successful_fetch_at: Optional[str]
     last_fetch_http_status: Optional[int]
+    model_path: Optional[str]
+    model_error: Optional[str]
 
 
 class DetectionsResponse(BaseModel):
@@ -44,6 +48,30 @@ class SourceResponse(BaseModel):
     poll_interval_seconds: float
     image_url: Optional[str]
     auth_mode: str
+    selected_camera_id: Optional[str]
     last_source_error: Optional[str]
     last_successful_fetch_at: Optional[str]
     last_fetch_http_status: Optional[int]
+
+
+class CameraOption(BaseModel):
+    camera_id: str
+    name: str
+    region: str
+    image_url: str
+
+
+class CameraListResponse(BaseModel):
+    cameras: List[CameraOption]
+
+
+class SourceSelectRequest(BaseModel):
+    source_type: str
+    camera_id: Optional[str] = None
+    image_url: Optional[str] = None
+
+
+class SourceSelectResponse(BaseModel):
+    status: str
+    message: str
+    source: SourceResponse

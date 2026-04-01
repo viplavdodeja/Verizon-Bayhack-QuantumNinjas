@@ -21,6 +21,8 @@ class DetectorState:
             "last_source_error": None,
             "last_successful_fetch_at": None,
             "last_fetch_http_status": None,
+            "model_path": None,
+            "model_error": None,
         }
 
     def set_source_details(self, source_type: str, source_name: str) -> None:
@@ -39,9 +41,35 @@ class DetectorState:
             self._state["model_loaded"] = model_loaded
             self._state["last_updated"] = self._iso_timestamp()
 
+    def set_model_diagnostics(
+        self,
+        model_path: str,
+        model_error: Optional[str],
+    ) -> None:
+        with self._lock:
+            self._state["model_path"] = model_path
+            self._state["model_error"] = model_error
+            self._state["last_updated"] = self._iso_timestamp()
+
     def set_source_connected(self, source_connected: bool) -> None:
         with self._lock:
             self._state["source_connected"] = source_connected
+            self._state["last_updated"] = self._iso_timestamp()
+
+    def reset_runtime_state(self, source_type: str, source_name: str) -> None:
+        with self._lock:
+            self._state["alert_active"] = False
+            self._state["consecutive_detections"] = 0
+            self._state["missed_frames"] = 0
+            self._state["latest_detections"] = []
+            self._state["latest_annotated_frame_bytes"] = None
+            self._state["source_type"] = source_type
+            self._state["source_name"] = source_name
+            self._state["source_connected"] = False
+            self._state["system_status"] = "restarting"
+            self._state["last_source_error"] = None
+            self._state["last_successful_fetch_at"] = None
+            self._state["last_fetch_http_status"] = None
             self._state["last_updated"] = self._iso_timestamp()
 
     def update_source_diagnostics(
