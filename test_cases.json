@@ -1,0 +1,23 @@
+{
+  "smoke_case": {
+    "smoke_detected": true,
+    "fire_detected": false,
+    "smoke_confidence": 0.46,
+    "fire_confidence": 0.0,
+    "repeated_frames": 1
+  },
+  "fire_case": {
+    "smoke_detected": false,
+    "fire_detected": true,
+    "smoke_confidence": 0.0,
+    "fire_confidence": 0.77,
+    "repeated_frames": 1
+  },
+  "no_detection_case": {
+    "smoke_detected": false,
+    "fire_detected": false,
+    "smoke_confidence": 0.0,
+    "fire_confidence": 0.0,
+    "repeated_frames": 1
+  }
+}
