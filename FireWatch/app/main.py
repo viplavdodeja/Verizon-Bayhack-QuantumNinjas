@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.detector import detector_service
+from app.multi_camera import multi_camera_monitor
 from app.routes import router
 
 
@@ -18,9 +19,11 @@ logging.basicConfig(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     detector_service.start()
+    multi_camera_monitor.start()
     try:
         yield
     finally:
+        multi_camera_monitor.stop()
         detector_service.stop()
 
 
