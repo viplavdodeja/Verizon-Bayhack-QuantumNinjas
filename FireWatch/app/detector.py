@@ -202,23 +202,31 @@ class FireDetectorService:
             return []
 
         try:
-            results = self.model.predict(
-                source=read_result.frame,
-                conf=settings.confidence_threshold,
-                iou=settings.iou_threshold,
-                imgsz=settings.img_size,
-                verbose=False,
-            )
+            return self.predict_frame(self.model, read_result.frame)
         except Exception:
             detector_state.set_system_status("prediction_error")
             return []
+
+    def predict_frame(self, model: YOLO, frame) -> List[Dict[str, object]]:
+        """Run the model on one frame and apply FireWatch's box filtering.
+
+        Shared by the single-source loop and the multi-camera monitor.
+        Raises on model errors so each caller can record them its own way.
+        """
+        results = model.predict(
+            source=frame,
+            conf=settings.confidence_threshold,
+            iou=settings.iou_threshold,
+            imgsz=settings.img_size,
+            verbose=False,
+        )
 
         result = results[0]
         boxes = result.boxes
 
         valid_detections: List[Dict[str, object]] = []
-        frame_height = read_result.frame.shape[0]
-        frame_width = read_result.frame.shape[1]
+        frame_height = frame.shape[0]
+        frame_width = frame.shape[1]
         frame_area = frame_width * frame_height
 
         if boxes is None or len(boxes) == 0:
@@ -226,7 +234,7 @@ class FireDetectorService:
 
         for box in boxes:
             class_index = int(box.cls[0])
-            label = self.model.names[class_index]
+            label = model.names[class_index]
             confidence = float(box.conf[0])
 
             coordinates = box.xyxy[0].tolist()

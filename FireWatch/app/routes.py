@@ -1,9 +1,10 @@
 from fastapi import APIRouter, HTTPException, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 
 from app.config import settings
 from app.detector import detector_service
 from app.models import CameraListResponse
+from app.multi_camera import multi_camera_monitor
 from app.models import DetectionsResponse
 from app.models import HealthResponse
 from app.models import SourceResponse
@@ -94,6 +95,52 @@ def get_source() -> SourceResponse:
 @router.get("/cameras", response_model=CameraListResponse)
 def get_arcgis_cameras() -> CameraListResponse:
     return CameraListResponse(cameras=settings.list_arcgis_cameras())
+
+
+@router.get("/cameras/all")
+def get_all_cameras() -> dict:
+    """Every AlertCalifornia camera with its latest per-camera status."""
+    return {
+        "monitor": multi_camera_monitor.status(),
+        "cameras": multi_camera_monitor.list_cameras(),
+    }
+
+
+@router.get("/cameras/{camera_id}")
+def get_camera(camera_id: str) -> dict:
+    camera = multi_camera_monitor.get_camera(camera_id)
+    if camera is None:
+        raise HTTPException(status_code=404, detail="Unknown camera.")
+    return camera
+
+
+@router.get("/cameras/{camera_id}/snapshot")
+def get_camera_snapshot(camera_id: str, size: str = "full") -> Response:
+    """Latest annotated frame. Before the camera's first analysis, redirect
+    to AlertCalifornia's own thumbnail so the grid still shows something."""
+    frame_bytes = multi_camera_monitor.get_snapshot(camera_id, size)
+    if frame_bytes is not None:
+        return Response(
+            content=frame_bytes,
+            media_type="image/jpeg",
+            headers={"Cache-Control": "no-store"},
+        )
+    fallback = multi_camera_monitor.get_thumb_fallback_url(camera_id)
+    if fallback is None:
+        raise HTTPException(status_code=404, detail="Unknown camera.")
+    return RedirectResponse(fallback, status_code=307)
+
+
+@router.get("/alerts")
+def get_alerts() -> dict:
+    """Cameras with an active fire/smoke alert, newest first."""
+    alerts = multi_camera_monitor.list_alerts()
+    return {"alert_count": len(alerts), "alerts": alerts}
+
+
+@router.get("/monitor/status")
+def get_monitor_status() -> dict:
+    return multi_camera_monitor.status()
 
 
 @router.post("/source/select", response_model=SourceSelectResponse)

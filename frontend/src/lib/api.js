@@ -74,3 +74,24 @@ export function buildSnapshotImageUrl() {
   const cacheBreaker = Date.now();
   return `${API_BASE}/snapshot?ts=${cacheBreaker}`;
 }
+
+
+export async function fetchAllCameras() {
+  return fetchJson("/cameras/all");
+}
+
+
+export async function fetchAlerts() {
+  return fetchJson("/alerts");
+}
+
+
+export async function fetchCameraDetail(cameraId) {
+  return fetchJson(`/cameras/${encodeURIComponent(cameraId)}`);
+}
+
+
+export function buildCameraSnapshotUrl(cameraId, size = "full", version = "") {
+  const params = new URLSearchParams({ size, v: version });
+  return `${API_BASE}/cameras/${encodeURIComponent(cameraId)}/snapshot?${params}`;
+}
